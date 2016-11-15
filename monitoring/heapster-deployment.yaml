@@ -1,0 +1,42 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: heapster
+  namespace: kube-system
+  labels:
+    k8s-app: heapster
+    kubernetes.io/cluster-service: "true"
+    version: v1.2.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: heapster
+      version: v1.2.0
+  template:
+    metadata:
+      labels:
+        k8s-app: heapster
+        version: v1.2.0
+        kubernetes.io/cluster-service: "true"
+    spec:
+      containers:
+        - image: gcr.io/google_containers/heapster:v1.2.0
+          name: heapster
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8082
+              scheme: HTTP
+            initialDelaySeconds: 180
+            timeoutSeconds: 5
+          command:
+            - /heapster
+            - --source=kubernetes.summary_api:''
+            - --sink=influxdb:http://monitoring-influxdb:8086
+        - image: gcr.io/google_containers/heapster:v1.2.0
+          name: eventer
+          command:
+            - /eventer
+            - --source=kubernetes:''
+            - --sink=influxdb:http://monitoring-influxdb:8086
