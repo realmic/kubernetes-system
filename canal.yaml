@@ -5,20 +5,9 @@ metadata:
   name: canal-config
   namespace: kube-system
 data:
-  # Configure this with the location of your etcd cluster.
   etcd_endpoints: "http://192.52.166.173:6666"
-
-  # The interface used by canal for host <-> host communication.
-  # If left blank, then the interface is chosing using the node's
-  # default route.
   canal_iface: ""
-
-  # Whether or not to masquerade traffic to destinations not within
-  # the pod network.
-  masquerade: "true"
-
-  # The CNI network configuration to install on each node.  The special
-  # values in this config will be automatically populated.
+  masquerade: true
   cni_network_config: |-
     {
         "name": "canal",
@@ -39,10 +28,6 @@ data:
     }
 
 ---
-
-# This manifest installs the Canal etcd on the kubeadm master.  This uses a DaemonSet
-# to force it to run on the master even when the master isn't schedulable, and uses
-# nodeSelector to ensure it only runs on the master.
 apiVersion: extensions/v1beta1
 kind: DaemonSet
 metadata:
@@ -59,7 +44,6 @@ spec:
       labels:
         k8s-app: canal-etcd
     spec:
-      # Only run this pod on the master.
       nodeSelector:
         kubeadm.alpha.kubernetes.io/role: master
       hostNetwork: true
@@ -82,9 +66,6 @@ spec:
             path: /var/etcd
 
 ---
-
-# This manfiest installs the Service which gets traffic to the Calico
-# etcd.
 apiVersion: v1
 kind: Service
 metadata:
@@ -93,22 +74,13 @@ metadata:
   name: canal-etcd
   namespace: kube-system
 spec:
-  # Select the canal-etcd pod running on the master.
   selector:
     k8s-app: canal-etcd
-  # Use an externalIP instead of a ClusterIP
   externalIPs:
     - 192.52.166.173
   ports:
     - port: 6666
-
 ---
-
-
-
-# This manifest installs the per-node agents, as well
-# as the CNI plugins and network config on
-# each master and worker node in a Kubernetes cluster.
 kind: DaemonSet
 apiVersion: extensions/v1beta1
 metadata:
@@ -127,32 +99,26 @@ spec:
     spec:
       hostNetwork: true
       containers:
-        # Runs the flannel daemon to enable vxlan networking between
-        # container hosts.
         - name: flannel
           image: quay.io/coreos/flannel:v0.6.1
           env:
-            # The location of the etcd cluster.
             - name: FLANNELD_ETCD_ENDPOINTS
               valueFrom:
                 configMapKeyRef:
                   name: canal-config
                   key: etcd_endpoints
-            # The interface flannel should run on.
             - name: FLANNELD_IFACE
               valueFrom:
                 configMapKeyRef:
                   name: canal-config
                   key: canal_iface
-            # Perform masquerade on traffic leaving the pod cidr.
             - name: FLANNELD_IP_MASQ
               valueFrom:
                 configMapKeyRef:
                   name: canal-config
                   key: masquerade
-            # Write the subnet.env file to the mounted directory.
             - name: FLANNELD_SUBNET_FILE
-              value: "/run/flannel/subnet.env"
+              value: /run/flannel/subnet.env
           securityContext:
             privileged: true
           volumeMounts:
@@ -160,24 +126,18 @@ spec:
               name: resolv
             - mountPath: /run/flannel
               name: run-flannel
-        # Runs calico/node container on each Kubernetes node.  This
-        # container programs network policy and local routes on each
-        # host.
         - name: calico-node
           image: quay.io/calico/node:v0.22.0
           env:
-            # The location of the etcd cluster.
             - name: ETCD_ENDPOINTS
               valueFrom:
                 configMapKeyRef:
                   name: canal-config
                   key: etcd_endpoints
-            # Disable Calico BGP.  Calico is simply enforcing policy.
             - name: CALICO_NETWORKING
-              value: "false"
-            # Disable file logging so `kubectl logs` works.
+              value: false
             - name: CALICO_DISABLE_FILE_LOGGING
-              value: "true"
+              value: true
           securityContext:
             privileged: true
           volumeMounts:
@@ -187,23 +147,18 @@ spec:
             - mountPath: /var/run/calico
               name: var-run-calico
               readOnly: false
-        # This container installs the Calico CNI binaries
-        # and CNI network config file on each node.
         - name: install-calico-cni
           image: calico/cni:v1.4.2
           imagePullPolicy: Always
           command: ["/install-cni.sh"]
           env:
-            # The name of the CNI network config file to install.
             - name: CNI_CONF_NAME
-              value: "10-canal.conf"
-            # The location of the etcd cluster.
+              value: 10-canal.conf
             - name: ETCD_ENDPOINTS
               valueFrom:
                 configMapKeyRef:
                   name: canal-config
                   key: etcd_endpoints
-            # The CNI network config to install on each node.
             - name: CNI_NETWORK_CONFIG
               valueFrom:
                 configMapKeyRef:
@@ -215,21 +170,18 @@ spec:
             - mountPath: /host/etc/cni/net.d
               name: cni-net-dir
       volumes:
-        # Used by calico/node.
         - name: lib-modules
           hostPath:
             path: /lib/modules
         - name: var-run-calico
           hostPath:
             path: /var/run/calico
-        # Used to install CNI.
         - name: cni-bin-dir
           hostPath:
             path: /opt/cni/bin
         - name: cni-net-dir
           hostPath:
             path: /etc/cni/net.d
-        # Used by flannel daemon.
         - name: run-flannel
           hostPath:
             path: /run/flannel
@@ -238,9 +190,6 @@ spec:
             path: /etc/resolv.conf
 
 ---
-
-# This manifest deploys a Job which performs one time
-# configuration of Canal.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -259,16 +208,14 @@ spec:
       hostNetwork: true
       restartPolicy: OnFailure
       containers:
-        # Writes basic flannel configuration to etcd.
         - name: configure-flannel
           image: quay.io/coreos/etcd:v3.0.9
           command:
-          - "etcdctl"
-          - "set"
-          - "/coreos.com/network/config"
-          - '{ "Network": "192.168.0.0/16", "Backend": {"Type": "vxlan"} }'
+            - "etcdctl"
+            - "set"
+            - "/coreos.com/network/config"
+            - '{ "Network": "192.168.0.0/16", "Backend": {"Type": "vxlan"} }'
           env:
-            # The location of the etcd cluster.
             - name: ETCDCTL_PEERS
               valueFrom:
                 configMapKeyRef:
@@ -276,9 +223,6 @@ spec:
                   key: etcd_endpoints
 
 ---
-
-# This manifest deploys the Calico policy controller on Kubernetes.
-# See https://github.com/projectcalico/k8s-policy
 apiVersion: extensions/v1beta1
 kind: ReplicaSet
 metadata:
@@ -287,7 +231,6 @@ metadata:
   labels:
     k8s-app: calico-policy
 spec:
-  # The policy controller can only have a single active instance.
   replicas: 1
   template:
     metadata:
@@ -299,25 +242,17 @@ spec:
       labels:
         k8s-app: calico-policy
     spec:
-      # The policy controller must run in the host network namespace so that
-      # it isn't governed by policy that would prevent it from working.
       hostNetwork: true
       containers:
         - name: calico-policy-controller
           image: calico/kube-policy-controller:v0.3.0
           env:
-            # The location of the Calico etcd cluster.
             - name: ETCD_ENDPOINTS
               valueFrom:
                 configMapKeyRef:
                   name: canal-config
                   key: etcd_endpoints
-            # The location of the Kubernetes API.  Use the default Kubernetes
-            # service for API access.
             - name: K8S_API
               value: "https://kubernetes.default:443"
-            # Since we're running in the host namespace and might not have KubeDNS
-            # access, configure the container's /etc/hosts to resolve
-            # kubernetes.default to the correct service clusterIP.
             - name: CONFIGURE_ETC_HOSTS
               value: "true"
