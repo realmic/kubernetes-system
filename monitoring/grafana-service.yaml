@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    # For use as a Cluster add-on (https://github.com/kubernetes/kubernetes/tree/master/cluster/addons)
+    # If you are NOT using this as an addon, you should comment out this line.
+    kubernetes.io/cluster-service: 'true'
+    kubernetes.io/name: monitoring-grafana
+  name: monitoring-grafana
+  namespace: kube-system
+spec:
+  ports:
+  - port: 80
+    targetPort: 3000
+  selector:
+    name: monitoring-grafana
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  labels:
+    app: monitoring-grafana
+  name: monitoring-grafana
+  namespace: kube-system
+  annotations:
+    kubernetes.io/tls-acme: "true"
+    kubernetes.io/ingress.class: "nginx"
+    ingress.kubernetes.io/auth-type: "basic"
+    ingress.kubernetes.io/auth-secret: "monitoring-grafana"
+    ingress.kubernetes.io/auth-realm: "Authentication Required"
+spec:
+  tls:
+  - hosts:
+    - grafana.mctherealm.net
+    secretName: monitoring-grafana-tls
+  rules:
+  - host: grafana.mctherealm.net
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: monitoring-grafana
+          servicePort: 3000
