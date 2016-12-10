@@ -6,7 +6,7 @@ metadata:
 data:
   etcd_endpoints: "http://192.52.166.173:6666"
   canal_iface: ""
-  masquerade: true
+  masquerade: "true"
   cni_network_config: |-
     {
         "name": "canal",
@@ -73,8 +73,6 @@ metadata:
 spec:
   selector:
     k8s-app: canal-etcd
-  externalIPs:
-    - 192.52.166.173
   ports:
     - port: 6666
 ---
@@ -115,7 +113,7 @@ spec:
                   name: canal-config
                   key: masquerade
             - name: FLANNELD_SUBNET_FILE
-              value: /run/flannel/subnet.env
+              value: "/run/flannel/subnet.env"
           securityContext:
             privileged: true
           volumeMounts:
@@ -132,9 +130,9 @@ spec:
                   name: canal-config
                   key: etcd_endpoints
             - name: CALICO_NETWORKING
-              value: false
+              value: "false"
             - name: CALICO_DISABLE_FILE_LOGGING
-              value: true
+              value: "true"
           securityContext:
             privileged: true
           volumeMounts:
@@ -150,7 +148,7 @@ spec:
           command: ["/install-cni.sh"]
           env:
             - name: CNI_CONF_NAME
-              value: 10-canal.conf
+              value: "10-canal.conf"
             - name: ETCD_ENDPOINTS
               valueFrom:
                 configMapKeyRef:
